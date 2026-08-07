@@ -2,8 +2,8 @@
 <html lang="hi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PDF Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Sharp PDF Viewer</title>
   <!-- PDF.js CDN Script -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <style>
@@ -12,6 +12,8 @@
       padding: 0;
       background-color: #323639;
       font-family: Arial, sans-serif;
+      /* स्मूथ स्क्रॉलिंग के लिए */
+      -webkit-overflow-scrolling: touch; 
     }
     /* ऊपर की पट्टी (Header Bar) */
     #top-bar {
@@ -43,20 +45,35 @@
       font-size: 14px;
       font-weight: bold;
     }
-    /* PDF कंटेनर */
+    /* PDF कंटेनर - स्क्रॉलिंग यही होगी */
     #pdf-container {
-      margin-top: 60px;
+      margin-top: 50px; /* Header की ऊंचाई */
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 12px;
-      padding-bottom: 20px;
+      padding: 10px 0;
+      width: 100%;
+      box-sizing: border-box;
     }
+    /* Canvas की CSS सेटिंग - यह सुनिश्चित करती है कि यह स्क्रीन के अंदर रहे */
     canvas {
+      display: block;
       box-shadow: 0 4px 10px rgba(0,0,0,0.4);
-      max-width: 96%;
-      height: auto !important;
+      margin-bottom: 12px;
       background-color: white;
+      /* हाई-डीपीआई रेंडरिंग के लिए महत्वपूर्ण */
+      max-width: 100%; 
+      height: auto !important; 
+    }
+    /* एरर मैसेज के लिए स्टाइल */
+    #error-message {
+      color: white;
+      background-color: rgba(255,0,0,0.8);
+      padding: 20px;
+      margin: 70px 20px;
+      border-radius: 8px;
+      text-align: center;
+      display: none; /* डिफ़ॉल्ट रूप से छिपा हुआ */
     }
   </style>
 </head>
@@ -67,44 +84,84 @@
     <a id="download-btn" class="download-btn" href="#" download>Download PDF</a>
   </div>
 
+  <div id="error-message"></div>
   <div id="pdf-container"></div>
 
   <script>
+    // PDF.js वर्कर सेट करें
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
     // URL से PDF लिंक निकालें
     const urlParams = new URLSearchParams(window.location.search);
     const pdfUrl = urlParams.get('file');
+    const container = document.getElementById('pdf-container');
+    const errorBox = document.getElementById('error-message');
+
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.style.display = 'block';
+      container.style.display = 'none';
+    }
 
     if (pdfUrl) {
-      document.getElementById('download-btn').href = pdfUrl;
+      // डाउनलोड बटन को सही लिंक दें
+      const finalDownloadUrl = pdfUrl.includes('://') ? pdfUrl : window.location.href.split('?')[0].replace('index.html','') + pdfUrl;
+      document.getElementById('download-btn').href = finalDownloadUrl;
 
+      // PDF लोड करना शुरू करें
       pdfjsLib.getDocument(pdfUrl).promise.then(async (pdf) => {
-        const container = document.getElementById('pdf-container');
         
+        // हर पेज के लिए लूप चलाएं
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
           const page = await pdf.getPage(pageNum);
+          
+          // --- धुंधलेपन (Blur) को ठीक करने का मुख्य लॉजिक ---
+          
+          // 1. स्क्रीन की क्वालिटी (Device Pixel Ratio) पहचानें (e.g., 2 or 3)
+          const dpr = window.devicePixelRatio || 1;
+          
+          // 2. मूल व्यूपोर्ट लें (scale 1 पर)
           const unscaledViewport = page.getViewport({ scale: 1 });
           
-          // स्क्रीन साइज़ के हिसाब से ऑटो-एडजस्ट
-          const containerWidth = Math.min(window.innerWidth, 800) - 20;
-          const scale = containerWidth / unscaledViewport.width;
-          const viewport = page.getViewport({ scale: scale });
+          // 3. तय करें कि पीडीएफ को स्क्रीन पर कितना चौड़ा दिखाना है (लॉजिकल चौड़ाई)
+          // मोबाइल के लिए लगभग पूरी चौड़ाई लें
+          const logicalWidth = Math.min(window.innerWidth, 800); 
+          const baseScale = logicalWidth / unscaledViewport.width;
 
+          // 4. नया व्यूपोर्ट बनाएं जिसमें DPR शामिल हो (हाई रिज़ॉल्यूशन रेंडरिंग के लिए)
+          const viewport = page.getViewport({ scale: baseScale * dpr });
+
+          // 5. Canvas बनाएं
           const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
+          const context = canvas.getContext('2d', { alpha: false }); // परफॉरमेंस के लिए alpha बंद
+
+          // 6. Canvas की आंतरिक रिज़ॉल्यूशन सेट करें (हाई रिज़ॉल्यूशन)
           canvas.height = viewport.height;
           canvas.width = viewport.width;
+
+          // 7. Canvas की CSS चौड़ाई सेट करें (लॉजिकल चौड़ाई) ताकि यह स्क्रीन पर सही दिखे
+          canvas.style.width = Math.floor(viewport.width / dpr) + 'px';
+          canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
+
           container.appendChild(canvas);
 
-          await page.render({
+          // 8. रेंडर करें
+          const renderContext = {
             canvasContext: context,
-            viewport: viewport
-          }).promise;
+            viewport: viewport,
+            // टेक्स्ट को और शार्प बनाने के लिए (Optional)
+            intent: 'display'
+          };
+          
+          await page.render(renderContext).promise;
         }
+        
       }).catch(err => {
-        alert("PDF लोडिंग में समस्या आई: " + err.message);
+        console.error(err);
+        showError(`एरर: PDF लोड नहीं हो सकी। जाँचें कि फाइल का नाम सही है या नहीं। (आधिकारिक एरर: ${err.message})`);
       });
+    } else {
+      showError("एरर: लिंक में PDF का नाम नहीं मिला! कृपया लिंक में ?file=pdf_का_नाम.pdf जोड़ें।");
     }
   </script>
 </body>
