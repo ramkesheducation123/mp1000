@@ -2,9 +2,8 @@
 <html lang="hi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Sharp PDF Viewer</title>
-  <!-- PDF.js CDN Script -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <title>Modern PDF Viewer with Loader</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <style>
     body {
@@ -12,157 +11,256 @@
       padding: 0;
       background-color: #323639;
       font-family: Arial, sans-serif;
-      /* स्मूथ स्क्रॉलिंग के लिए */
-      -webkit-overflow-scrolling: touch; 
+      -webkit-overflow-scrolling: touch;
     }
-    /* ऊपर की पट्टी (Header Bar) */
-    #top-bar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 50px;
-      background-color: #1e1e1e;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
-      color: white;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-      z-index: 1000;
-    }
-    #top-bar span {
-      font-size: 15px;
-      font-weight: bold;
-    }
-    /* डाउनलोड बटन */
-    .download-btn {
-      background-color: #007bff;
-      color: white;
-      padding: 8px 16px;
-      text-decoration: none;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: bold;
-    }
-    /* PDF कंटेनर - स्क्रॉलिंग यही होगी */
+
+    /* PDF कंटेनर */
     #pdf-container {
-      margin-top: 50px; /* Header की ऊंचाई */
       display: flex;
       flex-direction: column;
       align-items: center;
       padding: 10px 0;
       width: 100%;
       box-sizing: border-box;
+      /* शुरुआत में छिपाएं जब तक लोड न हो */
+      visibility: hidden; 
     }
-    /* Canvas की CSS सेटिंग - यह सुनिश्चित करती है कि यह स्क्रीन के अंदर रहे */
+
     canvas {
       display: block;
       box-shadow: 0 4px 10px rgba(0,0,0,0.4);
       margin-bottom: 12px;
       background-color: white;
-      /* हाई-डीपीआई रेंडरिंग के लिए महत्वपूर्ण */
-      max-width: 100%; 
-      height: auto !important; 
+      max-width: 100%;
+      height: auto !important;
+      transition: width 0.3s ease;
     }
-    /* एरर मैसेज के लिए स्टाइल */
+
+    /* --- फुल स्क्रीन लोडर (CSS Spinner) --- */
+    #loader-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #323639; /* बॉडी जैसा बैकग्राउंड */
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 2000; /* सब कुछ के ऊपर */
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+
+    .spinner {
+      border: 6px solid #f3f3f3; /* हल्का ग्रे */
+      border-top: 6px solid #007bff; /* नीला रंग (FAB जैसा) */
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* लोडर को छिपाने के लिए क्लास */
+    #loader-container.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    /* --- FAB स्टाइल (पुराना ही है) --- */
+    .fab-container {
+      position: fixed;
+      bottom: 25px;
+      right: 25px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      z-index: 1000;
+      /* FAB को भी तब तक छिपाएं जब तक PDF लोड न हो */
+      visibility: hidden; 
+      opacity: 0;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+    
+    .fab-container.visible {
+        visibility: visible;
+        opacity: 1;
+    }
+
+    .fab-menu {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      margin-bottom: 15px;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(20px) scale(0.8);
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+
+    .fab-menu.active {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+
+    .fab-btn {
+      width: 45px;
+      height: 45px;
+      border-radius: 50%;
+      background-color: #f1f3f4;
+      color: #333;
+      border: none;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .fab-main {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background-color: #007bff;
+      border: none;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      cursor: pointer;
+      transition: transform 0.3s ease;
+    }
+
+    .fab-main.active {
+      background-color: #ff3b30;
+      transform: rotate(45deg);
+    }
+
+    .fab-btn svg { width: 22px; height: 22px; fill: #333; }
+    .fab-main svg { width: 28px; height: 28px; fill: white; }
+
     #error-message {
       color: white;
       background-color: rgba(255,0,0,0.8);
       padding: 20px;
-      margin: 70px 20px;
+      margin: 20px;
       border-radius: 8px;
       text-align: center;
-      display: none; /* डिफ़ॉल्ट रूप से छिपा हुआ */
+      display: none;
+      z-index: 3000; /* लोडर के ऊपर */
+      position: relative;
     }
   </style>
 </head>
 <body>
 
-  <div id="top-bar">
-    <span>Document Viewer</span>
-    <a id="download-btn" class="download-btn" href="#" download>Download PDF</a>
+  <!-- लोडर स्क्रीन (HTML Spinner) -->
+  <div id="loader-container">
+    <div class="spinner"></div>
+    <p style="color:white; margin-top:15px; font-size:14px;">लोड हो रहा है...</p>
   </div>
 
   <div id="error-message"></div>
   <div id="pdf-container"></div>
 
+  <!-- Floating Action Buttons -->
+  <div class="fab-container" id="fab-container">
+    <div class="fab-menu" id="fab-menu">
+      <button class="fab-btn" id="btn-highlight" title="Highlight"><svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+      <button class="fab-btn" id="btn-zoom-in" title="Zoom In"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zm2.5-4h-2v2H9v-2H7V9h2V7h1.5v2h2v1.5z"/></svg></button>
+      <button class="fab-btn" id="btn-zoom-out" title="Zoom Out"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zm2.5-4H7V9h5v1.5z"/></svg></button>
+      <a class="fab-btn" id="btn-download" href="#" download title="Download"><svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></a>
+    </div>
+    <button class="fab-main" id="btn-fab-toggle"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
+  </div>
+
   <script>
-    // PDF.js वर्कर सेट करें
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-    // URL से PDF लिंक निकालें
     const urlParams = new URLSearchParams(window.location.search);
     const pdfUrl = urlParams.get('file');
     const container = document.getElementById('pdf-container');
     const errorBox = document.getElementById('error-message');
+    const loader = document.getElementById('loader-container'); // लोडर एलिमेंट
+    const fabContainer = document.getElementById('fab-container'); // FAB कंटेनर
+
+    let currentPdf = null;
+    let zoomLevel = 1.0;
+
+    // FAB Toggle Logic (पुराना ही है)
+    const fabToggle = document.getElementById('btn-fab-toggle');
+    const fabMenu = document.getElementById('fab-menu');
+    fabToggle.addEventListener('click', () => {
+      fabToggle.classList.toggle('active');
+      fabMenu.classList.toggle('active');
+    });
 
     function showError(message) {
-      errorBox.textContent = message;
+      errorBox.innerHTML = message;
       errorBox.style.display = 'block';
-      container.style.display = 'none';
+      // एरर आने पर लोडर छिपाएं
+      loader.classList.add('hidden'); 
+    }
+
+    // PDF Render Function
+    async function renderPDF() {
+      // ज़ूम करने पर लोडर न दिखाएं (सिर्फ पहली बार दिखाएं), 
+      // या अगर आप चाहते हैं तो यहाँ loader.classList.remove('hidden') कर सकते हैं।
+      
+      container.innerHTML = '';
+      
+      for (let pageNum = 1; pageNum <= currentPdf.numPages; pageNum++) {
+        const page = await currentPdf.getPage(pageNum);
+        const dpr = window.devicePixelRatio || 1;
+        const unscaledViewport = page.getViewport({ scale: 1 });
+        const logicalWidth = Math.min(window.innerWidth, 800) * zoomLevel; 
+        const baseScale = logicalWidth / unscaledViewport.width;
+        const viewport = page.getViewport({ scale: baseScale * dpr });
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d', { alpha: false });
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        canvas.style.width = Math.floor(viewport.width / dpr) + 'px';
+        canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
+        container.appendChild(canvas);
+
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+      }
+
+      // --- मुख्य बदलाव: रेंडरिंग पूरी होने के बाद लोडर छिपाएं ---
+      loader.classList.add('hidden'); // लोडर छिपाएं
+      container.style.visibility = 'visible'; // PDF दिखाएं
+      fabContainer.classList.add('visible'); // FAB बटन दिखाएं
     }
 
     if (pdfUrl) {
-      // डाउनलोड बटन को सही लिंक दें
       const finalDownloadUrl = pdfUrl.includes('://') ? pdfUrl : window.location.href.split('?')[0].replace('index.html','') + pdfUrl;
-      document.getElementById('download-btn').href = finalDownloadUrl;
+      document.getElementById('btn-download').href = finalDownloadUrl;
 
-      // PDF लोड करना शुरू करें
-      pdfjsLib.getDocument(pdfUrl).promise.then(async (pdf) => {
-        
-        // हर पेज के लिए लूप चलाएं
-        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-          const page = await pdf.getPage(pageNum);
-          
-          // --- धुंधलेपन (Blur) को ठीक करने का मुख्य लॉजिक ---
-          
-          // 1. स्क्रीन की क्वालिटी (Device Pixel Ratio) पहचानें (e.g., 2 or 3)
-          const dpr = window.devicePixelRatio || 1;
-          
-          // 2. मूल व्यूपोर्ट लें (scale 1 पर)
-          const unscaledViewport = page.getViewport({ scale: 1 });
-          
-          // 3. तय करें कि पीडीएफ को स्क्रीन पर कितना चौड़ा दिखाना है (लॉजिकल चौड़ाई)
-          // मोबाइल के लिए लगभग पूरी चौड़ाई लें
-          const logicalWidth = Math.min(window.innerWidth, 800); 
-          const baseScale = logicalWidth / unscaledViewport.width;
-
-          // 4. नया व्यूपोर्ट बनाएं जिसमें DPR शामिल हो (हाई रिज़ॉल्यूशन रेंडरिंग के लिए)
-          const viewport = page.getViewport({ scale: baseScale * dpr });
-
-          // 5. Canvas बनाएं
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d', { alpha: false }); // परफॉरमेंस के लिए alpha बंद
-
-          // 6. Canvas की आंतरिक रिज़ॉल्यूशन सेट करें (हाई रिज़ॉल्यूशन)
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-
-          // 7. Canvas की CSS चौड़ाई सेट करें (लॉजिकल चौड़ाई) ताकि यह स्क्रीन पर सही दिखे
-          canvas.style.width = Math.floor(viewport.width / dpr) + 'px';
-          canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
-
-          container.appendChild(canvas);
-
-          // 8. रेंडर करें
-          const renderContext = {
-            canvasContext: context,
-            viewport: viewport,
-            // टेक्स्ट को और शार्प बनाने के लिए (Optional)
-            intent: 'display'
-          };
-          
-          await page.render(renderContext).promise;
-        }
-        
+      // PDF लोड करना शुरू करें (लोडर पहले से ही दिख रहा है)
+      pdfjsLib.getDocument(pdfUrl).promise.then(pdf => {
+        currentPdf = pdf;
+        renderPDF(); // रेंडरिंग शुरू करें
       }).catch(err => {
-        console.error(err);
-        showError(`एरर: PDF लोड नहीं हो सकी। जाँचें कि फाइल का नाम सही है या नहीं। (आधिकारिक एरर: ${err.message})`);
+        showError(`एरर: PDF लोड नहीं हो सकी।<br>${err.message}`);
       });
     } else {
-      showError("एरर: लिंक में PDF का नाम नहीं मिला! कृपया लिंक में ?file=pdf_का_नाम.pdf जोड़ें।");
+      showError("एरर: लिंक में PDF का नाम नहीं मिला! लिंक में ?file=नाम.pdf जोड़ें।");
     }
+
+    // ज़ूम बटन्स लॉजिक (पुराना ही है)
+    document.getElementById('btn-zoom-in').addEventListener('click', () => { zoomLevel += 0.2; renderPDF(); });
+    document.getElementById('btn-zoom-out').addEventListener('click', () => { if (zoomLevel > 0.6) { zoomLevel -= 0.2; renderPDF(); } });
+    document.getElementById('btn-highlight').addEventListener('click', (e) => { e.preventDefault(); alert("टेक्स्ट हाईलाइट फीचर उपलब्ध नहीं है।"); });
+
   </script>
 </body>
 </html>
