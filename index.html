@@ -2,9 +2,9 @@
 <html lang="hi">
 <head>
   <meta charset="UTF-8">
-  <!-- महत्वपूर्ण: Native Pinch-to-Zoom को इनेबल करने के लिए 'user-scalable=yes' सेट किया गया है -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=10.0, user-scalable=yes">
-  <title>Real Zoom PDF Viewer</title>
+  <!-- महत्वपूर्ण: ब्राउज़र के डिफ़ॉल्ट ज़ूम को बंद करें (user-scalable=no) ताकि हमारा JS कोड इसे संभाल सके -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Original Quality Zoom PDF Viewer</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <style>
     body {
@@ -12,26 +12,31 @@
       padding: 0;
       background-color: #323639;
       font-family: Arial, sans-serif;
-      /* मोबाइल पर स्मूथ स्क्रॉलिंग के लिए */
-      -webkit-overflow-scrolling: touch; 
+      overflow: hidden; /* बॉडी स्क्रॉलिंग बंद करें, हम इसे JS में संभालेंगे */
+      touch-action: none; /* ब्राउज़र के डिफ़ॉल्ट टच एक्शन बंद करें */
     }
 
-    /* PDF कंटेनर: इसे ब्राउज़र के डिफ़ॉल्ट ज़ूम को संभालने दें */
-    #pdf-container {
+    /* मुख्य कंटेनर जो पैनिंग (मूवमेंट) को संभालेगा */
+    #viewer-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      justify-content: center; /* शुरुआत में सेंटर में रखें */
+      align-items: flex-start;
+    }
+
+    /* पीडीएफ कंटेनर जिसे हम स्केल (ज़ूम) और ट्रांसलेट (मूव) करेंगे */
+    #pdf-viewer {
       display: flex;
       flex-direction: column;
       align-items: center;
       padding: 10px 0;
-      width: 100%;
-      box-sizing: border-box;
-      /* शुरुआत में छिपाएं, लोडर हटने पर दिखेगा */
-      opacity: 0; 
-      transition: opacity 0.3s ease;
-    }
-
-    /* PDF दिखते समय इसे ओपेसिटी दें */
-    #pdf-container.visible {
-      opacity: 1;
+      transform-origin: 0 0; /* ज़ूम ऊपर-बाएँ कोने से शुरू हो */
+      will-change: transform; /* परफॉरमेंस के लिए */
     }
 
     canvas {
@@ -39,9 +44,7 @@
       box-shadow: 0 4px 10px rgba(0,0,0,0.4);
       margin-bottom: 12px;
       background-color: white;
-      /* शार्प रेंडरिंग के लिए */
-      max-width: 100%;
-      height: auto !important; 
+      /* CSS साइज़ को JS द्वारा नियंत्रित किया जाएगा */
     }
 
     /* --- फुल स्क्रीन लोडर --- */
@@ -56,7 +59,7 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      z-index: 2000; /* सबसे ऊपर */
+      z-index: 2000;
       transition: opacity 0.3s ease, visibility 0.3s ease;
     }
 
@@ -79,14 +82,11 @@
       visibility: hidden;
     }
 
-    /* --- फ्लोटिंग पैलेट स्टाइल (केवल Download) --- */
+    /* --- फ्लोटिंग डाउनलोड बटन --- */
     .fab-container {
       position: fixed;
       bottom: 25px;
       right: 25px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
       z-index: 1000;
       visibility: hidden; 
       opacity: 0;
@@ -98,7 +98,6 @@
         opacity: 1;
     }
 
-    /* डाउनलोड बटन के लिए नया स्टाइल (बिना मेनू के सीधे बटन) */
     .fab-main {
       width: 60px;
       height: 60px;
@@ -111,11 +110,6 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.4);
       cursor: pointer;
       text-decoration: none;
-      transition: background-color 0.2s;
-    }
-
-    .fab-main:active {
-      background-color: #0056b3;
     }
 
     .fab-main svg { width: 28px; height: 28px; fill: white; }
@@ -135,16 +129,18 @@
 </head>
 <body>
 
-  <!-- लोडर स्क्रीन -->
   <div id="loader-container">
     <div class="spinner"></div>
     <p style="color:white; margin-top:15px; font-size:14px;">लोड हो रहा है...</p>
   </div>
 
   <div id="error-message"></div>
-  <div id="pdf-container"></div>
 
-  <!-- फ्लोटिंग पैलेट (केवल Download) -->
+  <!-- मुख्य व्यूअर -->
+  <div id="viewer-container">
+    <div id="pdf-viewer"></div>
+  </div>
+
   <div class="fab-container" id="fab-container">
       <a class="fab-main" id="btn-download" href="#" download title="Download PDF">
         <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
@@ -152,17 +148,36 @@
   </div>
 
   <script>
-    // PDF.js वर्कर सेट करें
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
     const urlParams = new URLSearchParams(window.location.search);
     const pdfUrl = urlParams.get('file');
-    const container = document.getElementById('pdf-container');
+    
+    const viewerContainer = document.getElementById('viewer-container');
+    const pdfViewer = document.getElementById('pdf-viewer');
+    
     const errorBox = document.getElementById('error-message');
     const loader = document.getElementById('loader-container');
     const fabContainer = document.getElementById('fab-container');
 
-    let isFirstPageLoaded = false; // ट्रैक करने के लिए कि क्या पहला पेज लोड हुआ
+    let pdfDoc = null;
+    let isFirstPageRendered = false;
+    let pagesRendering = new Set(); // ट्रैक करें कि कौन से पेज रेंडर हो रहे हैं
+
+    // --- ज़ूम और पैन स्टेट ---
+    let state = {
+      scale: 1.0,      // वर्तमान ज़ूम लेवल
+      panning: false,  // क्या यूज़र स्क्रीन मूव कर रहा है
+      pointX: 0,       // X अक्ष पर मूवमेंट
+      pointY: 0,       // Y अक्ष पर मूवमेंट
+      startX: 0,       // टच शुरू होने का X पॉइंट
+      startY: 0,       // टच शुरू होने का Y पॉइंट
+      initialPinchDist: 0, // पिंच शुरू होने पर उंगलियों के बीच की दूरी
+      initialScale: 1.0,   // पिंच शुरू होने पर स्केल
+    };
+
+    const MIN_SCALE = 1.0;
+    const MAX_SCALE = 5.0; // अधिकतम 5 गुना ज़ूम
 
     function showError(message) {
       errorBox.innerHTML = message;
@@ -170,66 +185,226 @@
       loader.classList.add('hidden'); 
     }
 
-    // लोडर छिपाने और PDF दिखाने का फ़ंक्शन
     function hideLoader() {
-      if (!isFirstPageLoaded) {
-        isFirstPageLoaded = true;
-        loader.classList.add('hidden'); // लोडर छिपाएं
-        container.classList.add('visible'); // PDF कंटेनर दिखाएं
-        fabContainer.classList.add('visible'); // FAB बटन दिखाएं
+      if (!isFirstPageRendered) {
+        isFirstPageRendered = true;
+        loader.classList.add('hidden');
+        fabContainer.classList.add('visible');
       }
     }
 
+    // --- हाई-क्वालिटी रेंडरिंग फ़ंक्शन (यह धुंधलेपन को ठीक करता है) ---
+    async function renderPage(pageNum) {
+      // अगर पेज पहले से रेंडर हो रहा है, तो रुकें
+      if (pagesRendering.has(pageNum)) return; 
+      pagesRendering.add(pageNum);
+
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        
+        // धुंधलापन ठीक करने का मुख्य लॉजिक:
+        // हम PDF.js को वर्तमान 'state.scale' और मोबाइल के 'dpr' के साथ रेंडर करने को कहते हैं।
+        // यह सुनिश्चित करता है कि कैनवास पर असली हाई-रिज़ॉल्यूशन इमेज बने।
+        
+        const dpr = window.devicePixelRatio || 1;
+        
+        // हम मूल व्यूपोर्ट लेते हैं (scale 1 पर)
+        const unscaledViewport = page.getViewport({ scale: 1 });
+        
+        // मोबाइल स्क्रीन की चौड़ाई के हिसाब से बेस स्केल तय करें (फिट-टू-विड्थ)
+        const logicalWidth = Math.min(window.innerWidth, 800); 
+        const baseFitScale = logicalWidth / unscaledViewport.width;
+
+        // *** महत्वपूर्ण ***: वर्तमान ज़ूम लेवल (state.scale) और DPR को शामिल करें
+        // रेंडरिंग के लिए 'dpr' से गुणा करने पर इमेज शार्प बनती है
+        const renderScale = baseFitScale * state.scale * dpr;
+        const viewport = page.getViewport({ scale: renderScale });
+
+        let canvas = document.getElementById(`page-${pageNum}`);
+        let context;
+
+        if (!canvas) {
+          // पहली बार रेंडरिंग: कैनवास बनाएं
+          canvas = document.createElement('canvas');
+          canvas.id = `page-${pageNum}`;
+          pdfViewer.appendChild(canvas);
+          context = canvas.getContext('2d', { alpha: false });
+        } else {
+          // दोबारा रेंडरिंग (ज़ूम के बाद): पुराना कैनवास साफ़ करें
+          context = canvas.getContext('2d', { alpha: false });
+          // कैनवास का आकार बदलें (यह पुराना डेटा साफ़ कर देता है)
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+        }
+
+        // कैनवास की आंतरिक चौड़ाई/ऊंचाई सेट करें (हाई रिज़ॉल्यूशन)
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        // कैनवास की CSS चौड़ाई/ऊंचाई सेट करें (लॉजिकल साइज़)
+        // यह सुनिश्चित करता है कि कैनवास स्क्रीन पर सही दिखे, भले ही उसकी आंतरिक रिज़ॉल्यूशन हाई हो
+        const cssScale = baseFitScale * state.scale;
+        canvas.style.width = Math.floor(unscaledViewport.width * cssScale) + 'px';
+        canvas.style.height = Math.floor(unscaledViewport.height * cssScale) + 'px';
+
+        // रेंडर करें
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+        
+        if (pageNum === 1) hideLoader();
+
+      } catch (err) {
+        console.error(`पेज ${pageNum} एरर:`, err);
+        if (pageNum === 1) hideLoader();
+      } finally {
+        pagesRendering.delete(pageNum);
+      }
+    }
+
+    // पूरी PDF को वर्तमान ज़ूम लेवल पर दोबारा रेंडर करें
+    async function reRenderAllPages() {
+      if (!pdfDoc) return;
+      // परफॉरमेंस के लिए हम सिर्फ पहले कुछ पेज रेंडर कर सकते हैं, 
+      // लेकिन सरलता के लिए यहाँ सभी रेंडर हो रहे हैं।
+      for (let i = 1; i <= pdfDoc.numPages; i++) {
+        await renderPage(i);
+      }
+    }
+
+    // --- ट्रांसफ़ॉर्मेशन (Scale और Pan) लागू करें ---
+    function setTransform() {
+      // पीडीएफ कंटेनर को मूव (translate) करें
+      // स्केल (zoom) हम CSS के ज़रिए नहीं, बल्कि PDF.js के ज़रिए कैनवास को दोबारा बनाकर कर रहे हैं।
+      // इसलिए यहाँ सिर्फ translation लागू होता है।
+      pdfViewer.style.transform = `translate(${state.pointX}px, ${state.pointY}px)`;
+    }
+
+    // स्क्रीन की सीमाओं (Bounds) की जाँच करें ताकि PDF स्क्रीन से बाहर न चली जाए
+    function clampBounds() {
+      const containerRect = viewerContainer.getBoundingClientRect();
+      const viewerRect = pdfViewer.getBoundingClientRect();
+
+      // ज़ूम लेवल के हिसाब से अधिकतम सीमाओं की गणना करें
+      // (चूंकि कैनवास का साइज़ बदल रहा है, हमें सीमाओं को सावधानी से संभालना होगा)
+      
+      const minX = containerRect.width - viewerRect.width;
+      const minY = containerRect.height - viewerRect.height;
+
+      // अगर PDF स्क्रीन से छोटी है, तो उसे सेंटर में रखें
+      if (viewerRect.width <= containerRect.width) {
+          state.pointX = (containerRect.width - viewerRect.width) / 2;
+      } else {
+          // सीमाओं के अंदर रखें
+          state.pointX = Math.min(0, Math.max(state.pointX, minX));
+      }
+
+      if (viewerRect.height <= containerRect.height) {
+          state.pointY = 0; // ऊपर से शुरू करें
+      } else {
+          state.pointY = Math.min(0, Math.max(state.pointY, minY));
+      }
+    }
+
+    // --- पिंच और पैन इवेंट्स (Touch Events) ---
+
+    function getDistance(touches) {
+      return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+    }
+
+    viewerContainer.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      
+      if (e.touches.length === 1) {
+        // सिंगल टच: पैनिंग (मूवमेंट) शुरू करें
+        state.panning = true;
+        state.startX = e.touches[0].clientX - state.pointX;
+        state.startY = e.touches[0].clientY - state.pointY;
+      } else if (e.touches.length === 2) {
+        // डबल टच: पिंच-ज़ूम शुरू करें
+        state.panning = false; // पैनिंग बंद करें
+        state.initialPinchDist = getDistance(e.touches);
+        state.initialScale = state.scale;
+      }
+    });
+
+    viewerContainer.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+
+      if (e.touches.length === 1 && state.panning) {
+        // पैनिंग: PDF को मूव करें
+        state.pointX = e.touches[0].clientX - state.startX;
+        state.pointY = e.touches[0].clientY - state.startY;
+        clampBounds();
+        setTransform();
+      } else if (e.touches.length === 2) {
+        // पिंच-ज़ूम: स्केल की गणना करें
+        const currentDist = getDistance(e.touches);
+        const pincheScale = currentDist / state.initialPinchDist;
+        
+        // नया स्केल सेट करें (सीमाओं के अंदर)
+        let newScale = state.initialScale * pincheScale;
+        state.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, newScale));
+        
+        // कैनवास की CSS चौड़ाई को तुरंत अपडेट करें (विजुअल फीडबैक के लिए)
+        // यह थोड़ा धुंधला दिखेगा लेकिन 'touchend' पर ठीक हो जाएगा।
+        const dpr = window.devicePixelRatio || 1;
+        const logicalWidth = Math.min(window.innerWidth, 800);
+        
+        // सभी कैनवास को विजुअली स्केल करें (Raster stretch - temporary)
+        const canvases = pdfViewer.getElementsByTagName('canvas');
+        for (let canvas of canvases) {
+            // हम मूल (scale 1) चौड़ाई की गणना करते हैं और वर्तमान स्केल लागू करते हैं
+            const page = pdfDoc._transport.pageCache[parseInt(canvas.id.split('-')[1])-1];
+            if(!page) continue;
+            const unscaledViewport = page.getViewport({scale: 1});
+            const baseFitScale = logicalWidth / unscaledViewport.width;
+            const cssScale = baseFitScale * state.scale;
+            
+            canvas.style.width = Math.floor(unscaledViewport.width * cssScale) + 'px';
+            canvas.style.height = Math.floor(unscaledViewport.height * cssScale) + 'px';
+        }
+        
+        // सीमाओं को समायोजित करें क्योंकि साइज़ बदल गया है
+        clampBounds();
+        setTransform();
+      }
+    });
+
+    // ज़ूम खत्म होने पर (debounce) रेंडर करने के लिए टाइमर
+    let renderTimeout;
+
+    viewerContainer.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      state.panning = false;
+
+      if (e.touches.length < 2 && state.initialPinchDist > 0) {
+        // पिंच खत्म हुआ: दूरी को रीसेट करें
+        state.initialPinchDist = 0;
+        
+        // *** मुख्य लॉजिक ***: ज़ूम खत्म होने पर, हम पूरी PDF को 
+        // नए ज़ूम लेवल पर हाई-क्वालिटी में दोबारा रेंडर करते हैं।
+        clearTimeout(renderTimeout);
+        renderTimeout = setTimeout(() => {
+            reRenderAllPages(); // शार्प रेंडरिंग शुरू करें
+        }, 100); // 100ms का इंतज़ार करें (debounce)
+      }
+    });
+
+    // --- लोड और इनिशियलाइज़ेशन ---
+
     if (pdfUrl) {
-      // सेट डाउनलोड लिंक
       const finalDownloadUrl = pdfUrl.includes('://') ? pdfUrl : window.location.href.split('?')[0].replace('index.html','') + pdfUrl;
       document.getElementById('btn-download').href = finalDownloadUrl;
 
-      // PDF लोड करना शुरू करें
       pdfjsLib.getDocument(pdfUrl).promise.then(async (pdf) => {
-        
-        // हर पेज के लिए लूप चलाएं
-        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-          
-          try {
-              const page = await pdf.getPage(pageNum);
-              
-              // धुंधलापन ठीक करने के लिए High DPI रेंडरिंग
-              const dpr = window.devicePixelRatio || 1;
-              const unscaledViewport = page.getViewport({ scale: 1 });
-              
-              // मोबाइल स्क्रीन की चौड़ाई के हिसाब से बेस स्केल तय करें
-              const logicalWidth = Math.min(window.innerWidth, 800) - 20; 
-              const baseScale = logicalWidth / unscaledViewport.width;
-
-              // हाई रिज़ॉल्यूशन व्यूपोर्ट
-              const viewport = page.getViewport({ scale: baseScale * dpr });
-
-              const canvas = document.createElement('canvas');
-              const context = canvas.getContext('2d', { alpha: false });
-              
-              canvas.height = viewport.height;
-              canvas.width = viewport.width;
-              
-              // CSS के ज़रिए इसे वापस स्क्रीन के साइज़ पर लाएं ताकि native zoom काम करे
-              canvas.style.width = Math.floor(viewport.width / dpr) + 'px';
-              canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
-
-              container.appendChild(canvas);
-
-              // रेंडर करें
-              await page.render({ canvasContext: context, viewport: viewport }).promise;
-              
-              // --- मुख्य बदलाव: जैसे ही पहला पेज रेंडर हो जाए, लोडर हटा दें ---
-              if (pageNum === 1) {
-                  hideLoader();
-              }
-          } catch (pageErr) {
-              console.error(`पेज ${pageNum} रेंडर करने में एरर:`, pageErr);
-              // अगर पहला पेज रेंडर नहीं हो पाता, तो भी लोडर हटा दें ताकि एरर दिखे
-              if (pageNum === 1) hideLoader(); 
-          }
+        pdfDoc = pdf;
+        // शुरुआत में सभी पेज रेंडर करें (scale 1.0 पर)
+        for (let i = 1; i <= pdf.numPages; i++) {
+          await renderPage(i);
         }
+        
+        // शुरुआत में सेंटर में रखें
+        clampBounds();
+        setTransform();
         
       }).catch(err => {
         console.error(err);
