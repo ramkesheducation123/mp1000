@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <!-- महत्वपूर्ण: मोबाइल के Native Zoom को फिर से इनेबल करें (user-scalable=yes) -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-  <title>Lightweight & Fast PDF Viewer</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <style>
     body {
@@ -96,10 +95,10 @@
     }
 
     .fab-main {
-      width: 60px;
-      height: 60px;
+      width: 50px;
+      height: 50px;
       border-radius: 50%;
-      background-color: #007bff;
+      background-color: #8d5df9;
       border: none;
       display: flex;
       justify-content: center;
@@ -109,11 +108,11 @@
       text-decoration: none;
     }
 
-    .fab-main svg { width: 28px; height: 28px; fill: white; }
+    .fab-main svg { width: 25px; height: 25px; fill: white; }
 
     #error-message {
       color: white;
-      background-color: rgba(255,0,0,0.8);
+      background-color: rgba(255,0,0,0.5);
       padding: 20px;
       margin: 20px;
       border-radius: 8px;
@@ -129,7 +128,7 @@
   <!-- लोडर स्क्रीन -->
   <div id="loader-container">
     <div class="spinner"></div>
-    <p style="color:white; margin-top:15px; font-size:14px;">तेज़ी से Load हो रहा है...</p>
+    <p style="color:white; margin-top:15px; font-size:14px;">Load हो रहा है...</p>
   </div>
 
   <div id="error-message"></div>
@@ -294,7 +293,7 @@
         showError(`एरर: PDF लोड नहीं हो सकी।<br>${err.message}`);
       });
     } else {
-      showError("एरर: लिंक में PDF का नाम नहीं मिला! लिंक में ?file=नाम.pdf जोड़ें।");
+      showError("एरर: लिंक में PDF का नाम नहीं मिला!");
     }
 
   </script>
